@@ -1,0 +1,6 @@
+config/
+package-lock.json
+node_modules/
+results/
+dau-vao.xlsx
+~$dau-vao.xlsx
