@@ -271,7 +271,9 @@ async function processTask(row, sdt, taskId) {
         });
         await randomDelay();
 
-        await waitAndClick(page, '.js_btn-active');
+        await page.evaluate(() => {
+            document.querySelector('.js_btn-active').click();
+        });
 
         // === CHECK SĐT ĐÃ DÙNG NGAY SAU KHI CLICK CONFIRM ===
         await sleep(8000);
