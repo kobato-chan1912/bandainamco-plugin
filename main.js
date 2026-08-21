@@ -337,6 +337,10 @@ async function processTask(row, sdt, taskId) {
     } catch (error) {
         console.log(`[Luồng ${taskId}] Lỗi: ${error.message}`);
         statusMsg = error.message;
+        // Re-throw retryable error để processTaskWithRetry xử lý
+        if (isRetryableError(error)) {
+            throw error;
+        }
     } finally {
         const finalLine = `${email} | ${mkNamco} | ${hoDem} | ${ten} | ${statusMsg}\n`;
         fs.appendFileSync(resultFileName, finalLine);
