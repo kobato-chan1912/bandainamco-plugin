@@ -305,7 +305,9 @@ async function processTask(row, sdt, taskId) {
 
         // BƯỚC 10: Confirm & Xác nhận OTP SĐT
         console.log(`[Luồng ${taskId}] Xác nhận đăng ký...`);
-        await waitAndClick(page, 'input[value="登録する"]');
+        await page.evaluate(() => {
+            document.querySelector('input[value="登録する"]').click();
+        });
 
         console.log(`[Luồng ${taskId}] Đang chờ OTP SĐT Telegram (${sdt})...`);
         const smsOtp = await TelegramService.waitSmsOtp(sdt, 180000);
@@ -313,7 +315,10 @@ async function processTask(row, sdt, taskId) {
 
         await waitAndType(page, '#AUTH_CODE', smsOtp);
         await randomDelay();
-        await waitAndClick(page, 'input[value="認証する"]');
+
+        await page.evaluate(() => {
+            document.querySelector('input[value="認証する"]').click();
+        });
 
         await sleep(10000);
 
