@@ -296,7 +296,7 @@ async function processTask(row, sdt, taskId) {
         if (isDuplicate) {
             console.log(`[Luồng ${taskId}] SĐT ${sdt} đã được sử dụng (DUPLICATE). Bỏ qua account.`);
             PhoneService.writePhones(sdt, 'DUPLICATE');
-            statusMsg = 'SĐT đã sử dụng';
+            statusMsg = `SĐT đã sử dụng: ${sdt}`;
             // Ghi kết quả account
             const finalLine = `${email} | ${mkNamco} | ${hoDem} | ${ten} | ${statusMsg}\n`;
             fs.appendFileSync(resultFileName, finalLine);
@@ -311,7 +311,14 @@ async function processTask(row, sdt, taskId) {
 
         console.log(`[Luồng ${taskId}] Đang chờ OTP SĐT Telegram (${sdt})...`);
         const smsOtp = await TelegramService.waitSmsOtp(sdt, 180000);
-        if (!smsOtp) throw new Error("Không OTP SĐT: " + sdt);
+        if (!smsOtp) {
+            // Ghi NO_OTP vào phones.txt → lần sau bỏ qua SĐT này, email cũng bỏ qua vì thiếu SĐT
+            PhoneService.writePhones(sdt, 'NO_OTP');
+            statusMsg = `Không nhận được OTP SĐT: ${sdt}`;
+            const finalLine = `${email} | ${mkNamco} | ${hoDem} | ${ten} | ${statusMsg}\n`;
+            fs.appendFileSync(resultFileName, finalLine);
+            return;
+        }
 
         await waitAndType(page, '#AUTH_CODE', smsOtp);
         await randomDelay();
