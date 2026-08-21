@@ -30,6 +30,9 @@ const RETRYABLE_ERROR_PATTERNS = [
     'Connection refused',
     'Execution context was destroyed',
     'Cannot find context',
+    'PAGE_GOTO_TIMEOUT',
+    'Navigation timeout',
+    'TimeoutError',
 ];
 
 function isRetryableError(error) {
@@ -127,8 +130,12 @@ async function processTask(row, sdt, taskId) {
 
         await sleep(10000);
 
-        // BƯỚC 2: Vào link signup
-        await page.goto("https://account.bandainamcoid.com/signup.html?client_id=namcoparks_onlinestore&redirect_uri=https%3A%2F%2Fparks2.bandainamco-am.co.jp%2Fmember_regist_new.html");
+        // BƯỚC 2: Vào link signup (timeout 3 phút, đợi navigation xong)
+        try {
+            await page.goto("https://account.bandainamcoid.com/signup.html?client_id=namcoparks_onlinestore&redirect_uri=https%3A%2F%2Fparks2.bandainamco-am.co.jp%2Fmember_regist_new.html", { waitUntil: 'networkidle2', timeout: 180000 });
+        } catch (e) {
+            throw new Error("PAGE_GOTO_TIMEOUT: Không navigate được sau 3 phút - " + e.message);
+        }
 
         await page.waitForSelector('#language', { visible: true });
         await page.select('#language', 'ja');
@@ -171,61 +178,65 @@ async function processTask(row, sdt, taskId) {
             await waitAndClick(page, '#btn-auth');
         }
 
-        // BƯỚC 5: Tick checkbox Quảng cáo, Phân tích
-        console.log(`[Luồng ${taskId}] Tick checkbox Quảng cáo, Phân tích...`);
-        await page.waitForSelector('.c-checkbox__text', { visible: true });
-        await randomDelay();
-
-        await page.evaluate(() => {
-            const spans = Array.from(document.querySelectorAll('.c-checkbox__text'));
-            const adSpan = spans.find(s => s.textContent.trim() === '広告出稿');
-            if (adSpan) adSpan.click();
-            const analyticsSpan = spans.find(s => s.textContent.trim() === '分析');
-            if (analyticsSpan) analyticsSpan.click();
-        });
-
-        await randomDelay();
-        await waitAndClick(page, '#btn-accept-all');
-
-        // BƯỚC 6: Thêm thông tin
-        await waitAndClick(page, '#btn-add');
-        await randomDelay();
-
-        // BƯỚC 7: Chọn nữ -> Submit -> Back
-        await sleep(5000);
-        console.log(`[Luồng ${taskId}] Chọn giới tính Nữ và Submit...`);
-        await page.waitForSelector('#gender--1', { visible: true });
-        await randomDelay();
-        await page.evaluate(() => {
-            document.querySelector('#gender--1').click();
-        });
-        await sleep(5000);
-        await waitAndClick(page, '#btn-regist');
-        await sleep(5000);
-        await waitAndClick(page, '#btn-back');
-
-        // BƯỚC 8: Kiểm tra btn-to-service / btn-next
-        console.log(`[Luồng ${taskId}] Kiểm tra btn-to-service / btn-next (nếu có)...`);
-        await sleep(10000);
-
-        try {
-            await page.waitForSelector('#btn-to-service', { visible: true, timeout: 5000 });
+        if (!jumpedToService) {
+            // BƯỚC 5: Tick checkbox Quảng cáo, Phân tích
+            console.log(`[Luồng ${taskId}] Tick checkbox Quảng cáo, Phân tích...`);
+            await page.waitForSelector('.c-checkbox__text', { visible: true });
             await randomDelay();
-            await page.click('#btn-to-service');
-            console.log(`[Luồng ${taskId}] Đã click #btn-to-service`);
-            await sleep(2000);
-        } catch (_) {
-            console.log(`[Luồng ${taskId}] Không có nút #btn-to-service, bỏ qua.`);
-        }
 
-        try {
-            await page.waitForSelector('#btn-next', { visible: true, timeout: 5000 });
+            await page.evaluate(() => {
+                const spans = Array.from(document.querySelectorAll('.c-checkbox__text'));
+                const adSpan = spans.find(s => s.textContent.trim() === '広告出稿');
+                if (adSpan) adSpan.click();
+                const analyticsSpan = spans.find(s => s.textContent.trim() === '分析');
+                if (analyticsSpan) analyticsSpan.click();
+            });
+
             await randomDelay();
-            await page.click('#btn-next');
-            console.log(`[Luồng ${taskId}] Đã click #btn-next`);
-            await sleep(2000);
-        } catch (_) {
-            console.log(`[Luồng ${taskId}] Không có nút #btn-next, bỏ qua.`);
+            await waitAndClick(page, '#btn-accept-all');
+
+            // BƯỚC 6: Thêm thông tin
+            await waitAndClick(page, '#btn-add');
+            await randomDelay();
+
+            // BƯỚC 7: Chọn nữ -> Submit -> Back
+            await sleep(5000);
+            console.log(`[Luồng ${taskId}] Chọn giới tính Nữ và Submit...`);
+            await page.waitForSelector('#gender--1', { visible: true });
+            await randomDelay();
+            await page.evaluate(() => {
+                document.querySelector('#gender--1').click();
+            });
+            await sleep(5000);
+            await waitAndClick(page, '#btn-regist');
+            await sleep(5000);
+            await waitAndClick(page, '#btn-back');
+
+            // BƯỚC 8: Kiểm tra btn-to-service / btn-next
+            console.log(`[Luồng ${taskId}] Kiểm tra btn-to-service / btn-next (nếu có)...`);
+            await sleep(10000);
+
+            try {
+                await page.waitForSelector('#btn-to-service', { visible: true, timeout: 5000 });
+                await randomDelay();
+                await page.click('#btn-to-service');
+                console.log(`[Luồng ${taskId}] Đã click #btn-to-service`);
+                await sleep(2000);
+            } catch (_) {
+                console.log(`[Luồng ${taskId}] Không có nút #btn-to-service, bỏ qua.`);
+            }
+
+            try {
+                await page.waitForSelector('#btn-next', { visible: true, timeout: 5000 });
+                await randomDelay();
+                await page.click('#btn-next');
+                console.log(`[Luồng ${taskId}] Đã click #btn-next`);
+                await sleep(2000);
+            } catch (_) {
+                console.log(`[Luồng ${taskId}] Không có nút #btn-next, bỏ qua.`);
+            }
+        } else {
+            console.log(`[Luồng ${taskId}] Đã nhảy tới bước SĐT, bỏ qua bước 5-8.`);
         }
 
         // BƯỚC 9: Điền form chi tiết Namco
