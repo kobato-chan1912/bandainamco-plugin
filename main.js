@@ -148,21 +148,25 @@ async function processTask(row, sdt, taskId) {
         await waitAndType(page, '#pass', mkNamco);
         await waitAndClick(page, '#btn-idpw-next');
 
-        // BƯỚC 3: Điền ngày tháng năm
-        console.log(`[Luồng ${taskId}] Điền thông tin Ngày sinh...`);
-        await waitAndType(page, '#id_year', nam);
-        await waitAndType(page, '#id_month', thang);
-        await waitAndType(page, '#id_day', ngay);
-        await randomDelay();
-        await page.evaluate(() => {
-            document.querySelector('input#confirm').click();
-        });
-        await waitAndClick(page, '#btn-agree-b');
-
-        // Kiểm tra: trang có nhảy thẳng sang bước btn-to-service/btn-next không?
         const jumpedToService = await handleSkipToServiceNext(page, taskId);
 
+
+
+
         if (!jumpedToService) {
+
+            // BƯỚC 3: Điền ngày tháng năm
+            console.log(`[Luồng ${taskId}] Điền thông tin Ngày sinh...`);
+            await waitAndType(page, '#id_year', nam);
+            await waitAndType(page, '#id_month', thang);
+            await waitAndType(page, '#id_day', ngay);
+            await randomDelay();
+            await page.evaluate(() => {
+                document.querySelector('input#confirm').click();
+            });
+            await waitAndClick(page, '#btn-agree-b');
+
+    
             // BƯỚC 4: Chờ OTP Mail (bình thường)
             console.log(`[Luồng ${taskId}] Đang chờ OTP Email...`);
             let emailOtp = null;
