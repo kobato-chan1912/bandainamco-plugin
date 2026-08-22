@@ -11,6 +11,7 @@ global.smsStore = {};
 exports.initTelegram = async () => {
     const apiId = parseInt(process.env.API_ID);
     const apiHash = process.env.API_HASH;
+    const telegramCatchID = process.env.TELEGRAM_OTP_GROUP;
     let sessionData = "";
     
     if (fs.existsSync('./config/telegram-session.json')) {
@@ -50,7 +51,7 @@ exports.initTelegram = async () => {
         }
 
         // Group ID cần bắt
-        if (cleanID === '5305076532') { 
+        if (cleanID === telegramCatchID) { 
             const msgText = message.message;
             if (!msgText) return;
 
