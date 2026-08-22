@@ -33,7 +33,9 @@ const RETRYABLE_ERROR_PATTERNS = [
     'PAGE_GOTO_TIMEOUT',
     'Navigation timeout',
     'TimeoutError',
-    'Cannot read properties of null'
+    'Cannot read properties of null',
+    'Waiting for',
+    'failed'
 ];
 
 function isRetryableError(error) {
