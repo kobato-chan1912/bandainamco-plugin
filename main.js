@@ -17,7 +17,7 @@ const RETRY_DELAY_MS = 10000;
 const MAX_RETRIES = 3;
 const gpm = new GpmService(process.env.GPM_API_URL);
 
-let resultFileName = `results/Result-${Date.now()}.txt`;
+let resultFileName = `results/Result.txt`;
 if (!fs.existsSync('./results')) fs.mkdirSync('./results');
 
 const RETRYABLE_ERROR_PATTERNS = [
@@ -33,6 +33,7 @@ const RETRYABLE_ERROR_PATTERNS = [
     'PAGE_GOTO_TIMEOUT',
     'Navigation timeout',
     'TimeoutError',
+    'Cannot read properties of null'
 ];
 
 function isRetryableError(error) {
