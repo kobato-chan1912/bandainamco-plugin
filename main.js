@@ -151,6 +151,16 @@ async function processTask(row, sdt, taskId) {
         await waitAndType(page, '#pass', mkNamco);
         await waitAndClick(page, '#btn-idpw-next');
 
+        // Chờ trang load & kiểm tra nếu region bị chặn
+        await sleep(10000);
+        const bodyText = await page.evaluate(() => document.body.innerText || '');
+        if (bodyText.includes('お客様のご登録頂いている国／地域では、このサービスにはログインすることができません')) {
+            console.log(`[Luồng ${taskId}] ⚠ Region bị chặn. Bỏ qua email ${email}, giữ SĐT ${sdt} cho lần sau.`);
+            statusMsg = 'Region bị chặn (JP region required)';
+            // Không ghi SĐT vào phones.txt → giữ nguyên cho account sau
+            return statusMsg;
+        }
+
         const jumpedToService = await handleSkipToServiceNext(page, taskId);
 
 
@@ -303,7 +313,7 @@ async function processTask(row, sdt, taskId) {
             // Ghi kết quả account
             const finalLine = `${email} | ${mkNamco} | ${hoDem} | ${ten} | ${statusMsg}\n`;
             fs.appendFileSync(resultFileName, finalLine);
-            return;
+            return statusMsg;
         }
 
         // BƯỚC 10: Confirm & Xác nhận OTP SĐT
@@ -320,7 +330,7 @@ async function processTask(row, sdt, taskId) {
             statusMsg = `Không nhận được OTP SĐT: ${sdt}`;
             const finalLine = `${email} | ${mkNamco} | ${hoDem} | ${ten} | ${statusMsg}\n`;
             fs.appendFileSync(resultFileName, finalLine);
-            return;
+            return statusMsg;
         }
 
         await waitAndType(page, '#AUTH_CODE', smsOtp);
@@ -351,6 +361,7 @@ async function processTask(row, sdt, taskId) {
         if (browser) try { await browser.disconnect(); } catch (_) { }
         if (profileId) await gpm.closeAndDeleteProfile(profileId);
     }
+    return statusMsg;
 }
 
 /**
@@ -360,8 +371,7 @@ async function processTaskWithRetry(row, sdt, taskId) {
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            await processTask(row, sdt, taskId);
-            return;
+            return await processTask(row, sdt, taskId);
         } catch (outerError) {
             lastError = outerError;
             if (isRetryableError(outerError)) {
@@ -405,14 +415,18 @@ async function main() {
     // Load danh sách SĐT từ phones.txt
     const allPhones = PhoneService.getAllPhones();
 
-    // Lấy danh sách email từ Excel
-    const emailData = excelData.filter(row => row[4]);
+    // Lấy danh sách email từ Excel (giữ index gốc trong excelData)
+    const emailData = excelData
+        .map((row, idx) => ({ row, originalIndex: idx }))
+        .filter(item => item.row[4]);
 
     // Ghép email với SĐT theo index (email[0] ↔ phones[0], email[1] ↔ phones[1], ...)
     const pendingTasks = [];
 
     for (let i = 0; i < emailData.length; i++) {
-        const row = emailData[i];
+        const item = emailData[i];
+        const row = item.row;
+        const originalIndex = item.originalIndex;
         if (!allPhones[i]) {
             console.log(`   ⏭ Email ${row[4]} không có SĐT tương ứng (index ${i}), bỏ qua.`);
             continue;
@@ -423,7 +437,7 @@ async function main() {
             console.log(`   ⏭ Bỏ qua SĐT ${sdt} (đã xử lý: ${phoneResult})`);
             continue;
         }
-        pendingTasks.push({ row, sdt });
+        pendingTasks.push({ row, sdt, email: row[4], originalIndex });
     }
 
     console.log(`\n📋 Tổng email: ${emailData.length}, Tổng SĐT: ${allPhones.length}`);
@@ -441,11 +455,29 @@ async function main() {
         console.log(`🚀 Bắt đầu với ${threadCount} luồng...\n`);
 
         const limit = pLimit(threadCount);
+        const excelResults = [];
         const promises = pendingTasks.map((task, idx) => {
-            return limit(() => processTaskWithRetry(task.row, task.sdt, idx + 1));
+            return limit(async () => {
+                let status = null;
+                try {
+                    status = await processTaskWithRetry(task.row, task.sdt, idx + 1);
+                } catch (e) {
+                    status = e.message || 'Unknown error';
+                }
+                excelResults.push({
+                    email: task.email,
+                    originalIndex: task.originalIndex,
+                    status: status || 'Unknown',
+                });
+            });
         });
 
         await Promise.all(promises);
+
+        // Ghi status vào cột T của dau-vao.xlsx (sau khi tất cả luồng chạy xong)
+        if (excelResults.length > 0) {
+            writeExcelStatus(excelResults);
+        }
 
         console.log("\n=========================================");
         console.log(`📄 Data đã lưu vào file: ${resultFileName}`);
@@ -453,6 +485,46 @@ async function main() {
         console.log("=========================================\n");
         process.exit(0);
     });
+}
+
+/**
+ * Ghi trạng thái từng email vào cột T (index 19) của dau-vao.xlsx
+ * results: [{ email, status, originalIndex }]
+ */
+function writeExcelStatus(results) {
+    try {
+        const workbook = xlsx.readFile('./dau-vao.xlsx');
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // Đảm bảo cột T có header
+        const headerRow = xlsx.utils.sheet_to_json(sheet, { header: 1 })[0] || [];
+        if (!headerRow[19] || headerRow[19] !== 'Status') {
+            const cellRef = xlsx.utils.encode_cell({ r: 0, c: 19 });
+            sheet[cellRef] = { t: 's', v: 'Status' };
+        }
+
+        let written = 0;
+        for (const { email, status, originalIndex } of results) {
+            // originalIndex là index trong emailData (đã filter row có email)
+            // Cần map ngược lại index trong excelData
+            // Lưu ý: excelData.slice(1) đã bỏ header, nên originalIndex = vị trí trong sheet (0-based từ dòng 2)
+            const rowIdx = originalIndex + 1; // +1 vì có header
+            const cellRef = xlsx.utils.encode_cell({ r: rowIdx, c: 19 });
+            sheet[cellRef] = { t: 's', v: status || '' };
+            written++;
+        }
+
+        // Cập nhật range để bao gồm cột T
+        const range = xlsx.utils.decode_range(sheet['!ref'] || 'A1');
+        if (range.e.c < 19) range.e.c = 19;
+        sheet['!ref'] = xlsx.utils.encode_range(range);
+
+        xlsx.writeFile(workbook, './dau-vao.xlsx');
+        console.log(`📝 Đã ghi status vào cột T của dau-vao.xlsx (${written} dòng).`);
+    } catch (e) {
+        console.log(`❌ Lỗi ghi Excel: ${e.message}`);
+    }
 }
 
 main();
