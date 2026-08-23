@@ -2,6 +2,7 @@ const axios = require('axios');
 
 /**
  * Lấy proxy từ API và xác minh IP là Japan.
+ * Verify bằng cách gọi API check-IP QUA CHÍNH PROXY đó (để biết IP thực sự mà proxy exit ra).
  * Retry tối đa 5 lần nếu proxy không phải JP hoặc lỗi mạng.
  */
 exports.getProxy = async () => {
@@ -16,9 +17,9 @@ exports.getProxy = async () => {
 
             const p = res.data.data[0];
             const proxyAddr = `${p.ip}:${p.port}`;
-            console.log(`[Proxy] Lấy được ${proxyAddr}, đang xác minh IP Japan...`);
+            console.log(`[Proxy] Lấy được ${proxyAddr}, đang xác minh IP Japan qua proxy...`);
 
-            const isJP = await verifyJapanIp(p.ip);
+            const isJP = await verifyJapanIpViaProxy(p.ip, p.port, p.username, p.password);
             if (isJP) {
                 console.log(`[Proxy] ✓ ${proxyAddr} xác minh là IP Japan.`);
                 return proxyAddr;
@@ -33,17 +34,34 @@ exports.getProxy = async () => {
 };
 
 /**
- * Xác minh IP có phải Japan không qua ip-api.com.
+ * Xác minh IP Japan bằng cách gọi API check-IP QUA CHÍNH PROXY đó.
  * Trả về true nếu countryCode === 'JP'.
  */
-async function verifyJapanIp(ip) {
+async function verifyJapanIpViaProxy(ip, port, username, password) {
     try {
-        const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,query`, { timeout: 10000 });
+        const proxyConfig = {
+            host: ip,
+            port: parseInt(port, 10),
+            protocol: 'http',
+        };
+        if (username && password) {
+            proxyConfig.auth = { username, password };
+        }
+
+        const res = await axios.get('http://ip-api.com/json/?fields=status,country,countryCode,query', {
+            proxy: proxyConfig,
+            timeout: 15000,
+        });
+
         if (res.data && res.data.status === 'success' && res.data.countryCode === 'JP') {
             return true;
         }
+        if (res.data && res.data.countryCode) {
+            console.log(`[Proxy] Exit IP qua proxy ${ip}:${port} → country=${res.data.country}, code=${res.data.countryCode}`);
+        }
         return false;
-    } catch (_) {
+    } catch (e) {
+        console.log(`[Proxy] Verify qua proxy lỗi: ${e.message}`);
         return false;
     }
 }
